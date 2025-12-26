@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hand Controlled Particle System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    video {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      width: 160px;
+      opacity: 0.2;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+
+<video id="video" autoplay muted playsinline></video>
+
+<!-- THREE.JS -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<!-- MEDIAPIPE -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+/* -------------------- THREE SETUP -------------------- */
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera.position.z = 5;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+/* -------------------- PARTICLES -------------------- */
+const COUNT = 5000;
+const positions = new Float32Array(COUNT * 3);
+
+for (let i = 0; i < COUNT; i++) {
+  positions[i * 3] = (Math.random() - 0.5) * 10;
+  positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
+  positions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+}
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+const material = new THREE.PointsMaterial({
+  color: 0xff44ff,
+  size: 0.03
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+/* -------------------- HAND TRACKING -------------------- */
+let handDetected = false;
+let targetX = 0;
+let targetY = 0;
+
+const videoElement = document.getElementById("video");
+
+const hands = new Hands({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+
+hands.onResults(results => {
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    handDetected = true;
+
+    const point = results.multiHandLandmarks[0][9];
+    targetX = (point.x - 0.5) * 6;
+    targetY = -(point.y - 0.5) * 4;
+
+    material.color.setHSL(point.x, 1, 0.6);
+  } else {
+    handDetected = false;
+  }
+});
+
+const cam = new Camera(videoElement, {
+  onFrame: async () => {
+    await hands.send({ image: videoElement });
+  },
+  width: 640,
+  height: 480
+});
+cam.start();
+
+/* -------------------- MOUSE / TOUCH FALLBACK -------------------- */
+window.addEventListener("mousemove", e => {
+  if (!handDetected) {
+    targetX = (e.clientX / window.innerWidth - 0.5) * 6;
+    targetY = -(e.clientY / window.innerHeight - 0.5) * 4;
+  }
+});
+
+window.addEventListener("touchmove", e => {
+  if (!handDetected) {
+    const t = e.touches[0];
+    targetX = (t.clientX / window.innerWidth - 0.5) * 6;
+    targetY = -(t.clientY / window.innerHeight - 0.5) * 4;
+  }
+});
+
+/* -------------------- ANIMATION -------------------- */
+function animate() {
+  requestAnimationFrame(animate);
+
+  particles.rotation.y += (targetX - particles.rotation.y) * 0.05;
+  particles.rotation.x += (targetY - particles.rotation.x) * 0.05;
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* -------------------- RESIZE -------------------- */
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+
+</body>
+</html>
